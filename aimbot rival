@@ -1,0 +1,185 @@
+-- SERVICES
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Camera = workspace.CurrentCamera
+local LocalPlayer = Players.LocalPlayer
+
+-- PARAMÈTRES
+local Settings = {
+    AimbotOn = false,
+    EspOn = false,
+    SpinOn = false,
+    TracersOn = false,
+    FovSize = 150,
+    FovVisible = true,
+    Smoothing = 0.15, -- Ajusté pour mousemoverel
+    TeamCheck = false
+}
+
+-- NETTOYAGE
+local Old = game:GetService("CoreGui"):FindFirstChild("PeakPredator") or LocalPlayer.PlayerGui:FindFirstChild("PeakPredator")
+if Old then Old:Destroy() end
+
+-- INTERFACE
+local sg = Instance.new("ScreenGui", game:GetService("CoreGui"))
+sg.Name = "PeakPredator"
+
+local Main = Instance.new("Frame", sg)
+Main.Size = UDim2.new(0, 200, 0, 350)
+Main.Position = UDim2.new(0.5, -100, 0.5, -175)
+Main.BackgroundColor3 = Color3.fromRGB(5, 5, 5)
+Main.BorderSizePixel = 2
+Main.BorderColor3 = Color3.fromRGB(255, 0, 255)
+Main.Active = true
+Main.Draggable = true
+
+local Title = Instance.new("TextLabel", Main)
+Title.Size = UDim2.new(1, 0, 0, 40)
+Title.Text = "PEAK PREDATOR ⚡"
+Title.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.Font = Enum.Font.SourceSansBold
+Title.TextSize = 18
+
+local function CreateBtn(name, y, callback)
+    local btn = Instance.new("TextButton", Main)
+    btn.Size = UDim2.new(0, 180, 0, 35)
+    btn.Position = UDim2.new(0, 10, 0, y)
+    btn.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+    btn.Text = name .. ": OFF"
+    btn.TextColor3 = Color3.new(1, 1, 1)
+    
+    local state = false
+    btn.MouseButton1Click:Connect(function()
+        state = not state
+        btn.Text = name .. (state and ": ON" or ": OFF")
+        btn.BackgroundColor3 = state and Color3.fromRGB(255, 0, 255) or Color3.fromRGB(25, 25, 25)
+        callback(state)
+    end)
+end
+
+CreateBtn("LOCK AIM (M2)", 50, function(v) Settings.AimbotOn = v end)
+CreateBtn("PLAYER ESP", 95, function(v) Settings.EspOn = v end)
+CreateBtn("TRACEURS", 140, function(v) Settings.TracersOn = v end)
+CreateBtn("SPIN BOT", 185, function(v) Settings.SpinOn = v end)
+CreateBtn("SHOW FOV", 230, function(v) Settings.FovVisible = v end)
+
+local SD = Instance.new("TextButton", Main)
+SD.Text = "SELF DESTRUCT"
+SD.Size = UDim2.new(0, 180, 0, 35)
+SD.Position = UDim2.new(0, 10, 0, 300)
+SD.BackgroundColor3 = Color3.fromRGB(100, 0, 0)
+SD.TextColor3 = Color3.new(1, 1, 1)
+SD.MouseButton1Click:Connect(function() 
+    if LocalPlayer.Character and LocalPlayer.Character.HumanoidRootPart:FindFirstChild("PeakSpinPower") then
+        LocalPlayer.Character.HumanoidRootPart.PeakSpinPower:Destroy()
+    end
+    sg:Destroy() 
+end)
+
+-- FOV Circle
+local Circle = Drawing.new("Circle")
+Circle.Color = Color3.fromRGB(255, 0, 255)
+Circle.Thickness = 1
+Circle.Radius = Settings.FovSize
+Circle.Visible = false
+
+-- FONCTION AIMBOT (EXTRAITE DE TON CODE)
+local function GetClosestPlayer()
+    local target = nil
+    local shortestDistance = Settings.FovSize
+
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("Head") then
+            if Settings.TeamCheck and player.Team == LocalPlayer.Team then continue end
+            
+            local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+            if humanoid and humanoid.Health <= 0 then continue end
+
+            local pos, onScreen = Camera:WorldToViewportPoint(player.Character.Head.Position)
+            if onScreen then
+                local mousePos = UserInputService:GetMouseLocation()
+                local distance = (Vector2.new(pos.X, pos.Y) - mousePos).Magnitude
+                if distance < shortestDistance then
+                    target = player.Character.Head
+                    shortestDistance = distance
+                end
+            end
+        end
+    end
+    return target
+end
+
+-- MAIN LOOP
+RunService.RenderStepped:Connect(function()
+    Circle.Visible = Settings.FovVisible
+    Circle.Position = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
+    Circle.Radius = Settings.FovSize
+
+    -- AIMBOT EXECUTION
+    if Settings.AimbotOn and UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
+        local target = GetClosestPlayer()
+        if target then
+            local targetPos = Camera:WorldToViewportPoint(target.Position)
+            local mousePos = UserInputService:GetMouseLocation()
+            
+            if mousemoverel then
+                mousemoverel(
+                    (targetPos.X - mousePos.X) * Settings.Smoothing, 
+                    (targetPos.Y - mousePos.Y) * Settings.Smoothing
+                )
+            else
+                Camera.CFrame = Camera.CFrame:Lerp(CFrame.new(Camera.CFrame.Position, target.Position), Settings.Smoothing)
+            end
+        end
+    end
+
+    -- SPIN BOT
+    local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if root then
+        local spin = root:FindFirstChild("PeakSpinPower")
+        if Settings.SpinOn then
+            if not spin then
+                spin = Instance.new("AngularVelocity", root)
+                spin.Name = "PeakSpinPower"
+                spin.MaxTorque = math.huge
+                spin.AngularVelocity = Vector3.new(0, 60, 0)
+                spin.Attachment0 = root:FindFirstChild("RootAttachment") or Instance.new("Attachment", root)
+            end
+        elseif spin then spin:Destroy() end
+    end
+
+    -- ESP & TRACEURS
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+            -- Highlight ESP
+            local hl = p.Character:FindFirstChild("PredatorESP")
+            if Settings.EspOn then
+                if not hl then
+                    hl = Instance.new("Highlight", p.Character)
+                    hl.Name = "PredatorESP"
+                    hl.FillColor = Color3.fromRGB(255, 0, 255)
+                end
+            elseif hl then hl:Destroy() end
+
+            -- Beam Tracers
+            local tracer = p.Character:FindFirstChild("PeakTracer")
+            if Settings.TracersOn then
+                if not tracer then
+                    tracer = Instance.new("Beam", p.Character)
+                    tracer.Name = "PeakTracer"
+                    tracer.Width0, tracer.Width1 = 0.1, 0.1
+                    tracer.Color = ColorSequence.new(Color3.fromRGB(255, 0, 255))
+                    local a0 = Instance.new("Attachment", LocalPlayer.Character.HumanoidRootPart)
+                    local a1 = Instance.new("Attachment", p.Character.HumanoidRootPart)
+                    tracer.Attachment0, tracer.Attachment1 = a0, a1
+                end
+            elseif tracer then
+                if tracer.Attachment0 then tracer.Attachment0:Destroy() end
+                if tracer.Attachment1 then tracer.Attachment1:Destroy() end
+                tracer:Destroy()
+            end
+        end
+    end
+end)
